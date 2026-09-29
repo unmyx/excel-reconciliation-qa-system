@@ -1,0 +1,14 @@
+[project]
+name = "excel-reconciliation-qa-system"
+version = "0.1.0"
+description = "Excel reconciliation and data-quality reporting pipeline (synthetic portfolio project)."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2,<4",
+    "numpy>=1.26,<3",
+    "openpyxl>=3.1,<4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
