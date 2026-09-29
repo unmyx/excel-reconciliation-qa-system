@@ -1,7 +1,8 @@
 # Excel Reconciliation & QA System — Implementation Plan
 
-Status: proposed (no application code written yet)
-Target: Python 3.11+ (local env: 3.14.7, pandas 3.0.6, openpyxl 3.1.5, pytest 9.1.1)
+Status: implemented - kept as the specification the code follows.
+See `README.md` for the finished project, its results and its documented deviations.
+Target: Python 3.11+ (developed on 3.14.7, pandas 3.0.6, openpyxl 3.1.5, pytest 9.1.1)
 
 ## 1. Project structure
 

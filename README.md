@@ -9,6 +9,15 @@ rows that could not be used at all.
 > real customer information, and the figures quoted below come from the committed sample
 > dataset.
 
+**At a glance**
+
+* Two Excel files in, one ten-tab review workbook out: `python run.py`
+* Order-centric matching with aggregated part-payments, duplicate detection and
+  row-level quarantine instead of silent deletion
+* Every exception row carries `source_file` and `source_row` back to the worksheet cell
+* Deterministic synthetic dataset (7,500 orders / 7,994 payments) and 170 tests
+* No database, service, credential or network access - pandas, NumPy and openpyxl only
+
 ## 1. Project Overview
 
 Reconciling an orders export against a payments export is a routine finance-operations
@@ -220,6 +229,26 @@ from any working directory.
 | `2` | Fatal input/validation error - logged at ERROR, concise message on stderr, **no report written** |
 | `1` | Unexpected error - stack trace logged, concise message on stderr |
 
+### Configuration
+
+Business rules live in `recon/config.py` (the frozen `Config` dataclass), not scattered
+through the modules:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `amount_tolerance` | `0.01` | Difference allowed before an Amount Mismatch (`--tolerance`) |
+| `required_order_columns` / `required_payment_columns` | the seven schema columns | Any missing column is fatal |
+| `expected_currencies` | `EUR, USD, GBP, CHF` | Anything else is quarantined as an unexpected category |
+| `expected_order_statuses` / `expected_payment_statuses` | see `config.py` | Unexpected values are quarantined |
+| `expected_sales_channels` / `expected_payment_methods` | see `config.py` | Unexpected values are quarantined |
+| `allowed_payment_statuses_by_order_status` | mapping | Drives the Status Inconsistency check |
+| `order_id_pattern` / `payment_id_pattern` | `^ORD-\d{6}$` / `^PAY-\d{7}$` | Malformed identifiers are quarantined |
+| `duplicate_payment_fingerprint_columns` | five columns | What makes two payments "the same transaction" |
+| `orders_path` / `payments_path` / `output_path` | `data/...`, `outputs/...` | Also overridable per run from the CLI |
+
+Adapting the tool to a different export schema means editing that one file, or passing a
+`Config` instance to `recon.pipeline.run_pipeline` when calling it as a library.
+
 ## 12. Sample Data Generation
 
 ```bash
@@ -272,6 +301,57 @@ The Summary reports run metadata (UTC timestamp, application version, input file
 amount tolerance, generation seed), the totals, matched count, affected-record count,
 quarantined rows, reconciliation rate and findings per exception type.
 
+Copied from the committed sample run. The Summary tab holds two columns, with section
+rows between the blocks:
+
+```
+Metric                                | Value
+Run                                   |
+Report generated (UTC)                | 2026-09-29 17:03:58
+Application version                   | 0.1.0
+Orders file                           | orders_export.xlsx
+Payments file                         | payments_export.xlsx
+Amount tolerance                      | 0.01
+Sample data seed                      | 42
+Reconciliation                        |
+Total orders                          | 7525
+Total payments                        | 7994
+Matched records                       | 7075
+Exception count (affected records)    | 515
+Quarantined rows (QA issues)          | 80
+Reconciliation rate                   | 94.02%   (0.94 with a percentage format)
+Exception findings by type            |
+Missing Payment                       | 160
+Missing Order                         | 65
+Amount Mismatch                       | 130
+Duplicate Order                       | 25
+Duplicate Payment                     | 40
+Currency Mismatch                     | 50
+Status Inconsistency                  | 45
+Input Data Quality Error              | 115
+```
+
+One row from four of the exception tabs, showing what a reviewer works with:
+
+```
+Amount Mismatches                       (130 rows)
+source_file          source_row  order_id     currency  order_amount  total_paid  difference
+orders_export.xlsx   10          ORD-000737   EUR       77.38         26.93       50.45
+
+Duplicates                              (130 rows; a non-primary row shown)
+source_file          source_row  duplicate_type      duplicate_key  group_size  is_primary
+orders_export.xlsx   1690        duplicate_order_id  ORD-001202     2           False
+
+QA Issues                               (80 rows)
+source_file          source_row  qa_reason              qa_details
+orders_export.xlsx   90          malformed_id           order_id: malformed_id
+orders_export.xlsx   397         missing_required_value order_date: missing_required_value
+
+All Exceptions                          (630 rows)
+exception_type       source_file          source_row  order_id     payment_id
+Missing Payment      orders_export.xlsx   69          ORD-000584
+```
+
 Presentation: bold white-on-slate header row, frozen header pane, autofilter on the table
 tabs, column widths derived from content, `#,##0.00` for money, `yyyy-mm-dd` for dates, a
 percentage for the rate, conditional formatting on amount breaches, non-primary duplicate
@@ -297,6 +377,9 @@ python -m pytest -q      # 170 tests
 
 All fixtures are small hand-built DataFrames written to `tmp_path`; the suite does not read
 the committed sample exports.
+
+`.github/workflows/tests.yml` runs the suite and one end-to-end pipeline execution on
+Python 3.11 and 3.13 for every push and pull request.
 
 ## 15. Design Decisions
 
