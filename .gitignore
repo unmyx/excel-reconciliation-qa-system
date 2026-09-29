@@ -7,8 +7,12 @@ venv/
 .coverage
 htmlcov/
 
-# Generated sample data and reports (rebuild with scripts/generate_sample_data.py)
+# Generated files: rebuild with `python run.py --generate-sample`.
+# The two sample exports are committed so `python run.py` works from a fresh
+# clone; anything else written into these directories stays out of the repo.
 data/*.xlsx
+!data/orders_export.xlsx
+!data/payments_export.xlsx
 outputs/*
 
 # Editors / OS
