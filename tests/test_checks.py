@@ -206,6 +206,28 @@ def test_duplicate_payment_by_transaction_fingerprint_is_reported() -> None:
     assert result.amount_mismatches.empty
 
 
+def test_mixed_duplicate_group_reports_every_extra_row() -> None:
+    # One transaction recorded three times, twice under PAY-0000001 and once under
+    # PAY-0000002: two rows are duplicates, so two findings are expected and all
+    # three rows must be visible on the Duplicates tab.
+    result = reconcile_exports(
+        [order_row("ORD-000001", 30.0)],
+        [
+            payment_row("PAY-0000001", "ORD-000001", 10.0, source_row=2),
+            payment_row("PAY-0000001", "ORD-000001", 10.0, source_row=3),
+            payment_row("PAY-0000002", "ORD-000001", 10.0, source_row=4),
+        ],
+    )
+
+    duplicates = result.duplicate_payments
+    assert set(duplicates["duplicate_type"]) == {
+        DUPLICATE_PAYMENT_ID,
+        DUPLICATE_TRANSACTION,
+    }
+    assert duplicates[SOURCE_ROW_COLUMN].tolist() == [2, 3, 4]
+    assert int((~duplicates[IS_PRIMARY_COLUMN].astype(bool)).sum()) == 2
+
+
 @pytest.mark.parametrize("changed_column", list(DUPLICATE_PAYMENT_FINGERPRINT_COLUMNS))
 def test_fingerprint_requires_every_configured_column_to_match(
     changed_column: str,

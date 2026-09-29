@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 import run as cli
 from recon.config import Config
 from recon.excel_io import ExcelInputError
+from recon.matching import IS_PRIMARY_COLUMN
 from recon.pipeline import run_pipeline
 from recon.report import SHEET_ORDER, SUMMARY_SHEET
 from recon.validation import InputValidationError
@@ -432,3 +433,92 @@ def test_build_config_applies_overrides(tmp_path: Path) -> None:
     assert config.output_path == tmp_path / "r.xlsx"
     assert config.amount_tolerance == pytest.approx(0.25)
     assert config.expected_currencies == cli.DEFAULT_CONFIG.expected_currencies
+
+
+# --------------------------------------------------------------------------
+# The manifest is the ground truth for a seeded sample run
+# --------------------------------------------------------------------------
+
+
+def test_pipeline_finds_exactly_what_the_generator_injected(tmp_path: Path) -> None:
+    """Every injected anomaly must be detected, cascades included."""
+
+    from dataclasses import replace
+
+    from scripts.generate_sample_data import InjectionCounts, generate_dataset
+
+    counts = InjectionCounts(
+        missing_payment=12,
+        missing_order=6,
+        amount_mismatch=9,
+        currency_mismatch=5,
+        status_cancelled_with_successful_payment=3,
+        status_completed_with_failed_payment=2,
+        duplicate_order=3,
+        duplicate_payment_same_id=3,
+        duplicate_payment_new_id=2,
+        qa_order_rows=10,
+        qa_payment_rows=10,
+    )
+    config = _config(tmp_path)
+    generated = generate_dataset(
+        order_count=800,
+        seed=42,
+        output_dir=Path(config.orders_path).parent,
+        counts=counts,
+    )
+    expected = generated.manifest["expected_detections"]
+
+    result = run_pipeline(
+        replace(
+            config,
+            orders_path=generated.orders_path,
+            payments_path=generated.payments_path,
+            manifest_path=generated.manifest_path,
+        )
+    )
+
+    reconciliation = result.reconciliation
+    assert result.metrics.matched_count == expected["expected_matched_orders"]
+    assert len(reconciliation.missing_payments) == expected["missing_payments"]
+    assert len(reconciliation.missing_orders) == expected["missing_orders"]
+    assert len(reconciliation.amount_mismatches) == expected["amount_mismatches"]
+    assert len(reconciliation.currency_mismatches) == expected["currency_mismatches"]
+    assert (
+        len(reconciliation.status_inconsistencies)
+        == expected["status_inconsistencies"]
+    )
+    assert (
+        int((~reconciliation.duplicate_orders[IS_PRIMARY_COLUMN]).sum())
+        == expected["duplicate_order_findings"]
+    )
+    assert (
+        int((~reconciliation.duplicate_payments[IS_PRIMARY_COLUMN]).sum())
+        == expected["duplicate_payment_findings"]
+    )
+    assert (
+        len(reconciliation.blocked_payments)
+        == expected["payments_blocked_by_quarantined_orders"]
+    )
+
+    # quarantine accounting, by source and by reason
+    assert result.metrics.quarantined_rows == expected["quarantined_rows"]
+    assert result.orders.quarantined_count == (
+        expected["quarantined_rows_by_source"]["orders"]
+    )
+    assert result.payments.quarantined_count == (
+        expected["quarantined_rows_by_source"]["payments"]
+    )
+    reasons: dict[str, int] = {}
+    for validation in (result.orders, result.payments):
+        for reason, count in validation.reason_counts.items():
+            reasons[reason] = reasons.get(reason, 0) + count
+    assert reasons == expected["quarantined_rows_by_reason"]
+
+    # the union holds one finding per (record, exception type)
+    assert reconciliation.finding_count == sum(
+        result.metrics.exception_counts.values()
+    )
+    assert result.metrics.exception_counts["Input Data Quality Error"] == (
+        expected["input_data_quality_findings"]
+    )

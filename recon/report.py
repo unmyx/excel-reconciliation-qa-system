@@ -40,7 +40,7 @@ from recon.matching import (
     IS_PRIMARY_COLUMN,
     ReconciliationResult,
 )
-from recon.models import CHECKS, ExceptionType, SummaryMetrics
+from recon.models import CHECKS, CHECK_BY_TYPE, ExceptionType, SummaryMetrics
 from recon.validation import SOURCE_FILE_COLUMN, RowValidationResult
 
 DEFAULT_CONFIG = Config()
@@ -153,13 +153,19 @@ def write_report(
 
         tables: Sequence[tuple[str, pd.DataFrame]] = (
             (MATCHED_SHEET, reconciliation.matched),
-            ("Missing Payments", reconciliation.missing_payments),
-            ("Missing Orders", reconciliation.missing_orders),
-            ("Amount Mismatches", reconciliation.amount_mismatches),
-            ("Duplicates", reconciliation.duplicates),
-            ("Currency Mismatches", reconciliation.currency_mismatches),
-            ("Status Inconsistencies", reconciliation.status_inconsistencies),
-            ("QA Issues", _qa_issues(orders, payments)),
+            (_sheet_name(ExceptionType.MISSING_PAYMENT), reconciliation.missing_payments),
+            (_sheet_name(ExceptionType.MISSING_ORDER), reconciliation.missing_orders),
+            (_sheet_name(ExceptionType.AMOUNT_MISMATCH), reconciliation.amount_mismatches),
+            (_sheet_name(ExceptionType.DUPLICATE_ORDER), reconciliation.duplicates),
+            (
+                _sheet_name(ExceptionType.CURRENCY_MISMATCH),
+                reconciliation.currency_mismatches,
+            ),
+            (
+                _sheet_name(ExceptionType.STATUS_INCONSISTENCY),
+                reconciliation.status_inconsistencies,
+            ),
+            (_sheet_name(ExceptionType.QA_INPUT_ERROR), _qa_issues(orders, payments)),
             (ALL_EXCEPTIONS_SHEET, reconciliation.exceptions),
         )
         for sheet_name, frame in tables:
@@ -178,6 +184,12 @@ def _utc_now() -> datetime:
     """Naive UTC timestamp; Excel does not accept timezone-aware datetimes."""
 
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _sheet_name(exception_type: ExceptionType) -> str:
+    """Tab name for a check, taken from the model so it cannot drift."""
+
+    return CHECK_BY_TYPE[exception_type].sheet_name
 
 
 def _summary_entries(

@@ -19,7 +19,7 @@ from recon.config import (
     EXPECTED_PAYMENT_STATUSES,
     EXPECTED_SALES_CHANNELS,
 )
-from scripts.generate_sample_data import InjectionCounts, generate_dataset
+from scripts.generate_sample_data import InjectionCounts, _parse_args, generate_dataset
 
 SMALL_ORDER_COUNT = 800
 SMALL_COUNTS = InjectionCounts(
@@ -193,3 +193,9 @@ def test_injected_reconciliation_anomalies_are_present(tmp_path: Path) -> None:
 def test_too_few_orders_fails_with_a_clear_message(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not enough eligible orders"):
         generate_dataset(order_count=50, seed=42, output_dir=tmp_path / "data")
+
+
+def test_order_count_flag_accepts_the_plan_alias() -> None:
+    # docs/PLAN.md documents `--orders 7500`; --order-count remains the primary name.
+    assert _parse_args(["--orders", "7500", "--seed", "42"]).order_count == 7500
+    assert _parse_args(["--order-count", "500"]).order_count == 500

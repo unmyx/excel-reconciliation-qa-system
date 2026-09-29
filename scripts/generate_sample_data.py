@@ -1090,6 +1090,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--order-count",
+        "--orders",  # alias kept so the command documented in docs/PLAN.md works
         type=int,
         default=DEFAULT_ORDER_COUNT,
         help="number of synthetic orders to generate",

@@ -655,8 +655,10 @@ def find_duplicate_payments(
     """List every row of every duplicated payment group.
 
     Two passes, so the same duplication is not reported twice: first rows that
-    repeat a ``payment_id``, then - among the rows still unclaimed - rows that
-    repeat a transaction fingerprint under a different ``payment_id``.
+    repeat a ``payment_id``, then rows that repeat a transaction fingerprint.
+    A fingerprint group already reported as a repeated ``payment_id`` is skipped;
+    when only part of a group was reported that way, the remaining rows are still
+    reported as repeated transactions rather than dropped.
     """
 
     if payments.empty:
@@ -692,36 +694,44 @@ def find_duplicate_payments(
             )
         )
 
-    remaining = positions.loc[~claimed]
-    if not remaining.empty:
-        for fingerprint, group in remaining.groupby(
-            list(fingerprint_columns), sort=False, dropna=False
-        ):
-            if len(group) < 2:
-                continue
-            key = _format_fingerprint(fingerprint_columns, fingerprint)
-            records.extend(
-                {
-                    SOURCE_FILE_COLUMN: source_file,
-                    SOURCE_ROW_COLUMN: int(source_row),
-                    DUPLICATE_TYPE_COLUMN: DUPLICATE_TRANSACTION,
-                    DUPLICATE_KEY_COLUMN: key,
-                    DUPLICATE_GROUP_SIZE_COLUMN: len(group),
-                    IS_PRIMARY_COLUMN: is_primary,
-                    "order_id": str(order_id),
-                    "payment_id": str(payment_id),
-                    DETAILS_COLUMN: (
-                        f"identical transaction recorded {len(group)} times "
-                        "under different payment ids"
-                    ),
-                }
-                for (source_row, order_id, payment_id), is_primary in zip(
-                    group[
-                        [SOURCE_ROW_COLUMN, "order_id", "payment_id"]
-                    ].itertuples(index=False),
-                    _primary_flags(len(group)),
-                )
+    for fingerprint, group in positions.groupby(
+        list(fingerprint_columns), sort=False, dropna=False
+    ):
+        if len(group) < 2:
+            continue
+        claimed_in_group = claimed.loc[group.index]
+        if claimed_in_group.all():
+            continue  # the whole group is already reported as a repeated payment_id
+        partially_claimed = bool(claimed_in_group.any())
+        rows = group.loc[~claimed_in_group] if partially_claimed else group
+        flags = [False] * len(rows) if partially_claimed else _primary_flags(len(rows))
+        key = _format_fingerprint(fingerprint_columns, fingerprint)
+        details = (
+            f"identical transaction recorded {len(group)} times, "
+            "including under a repeated payment_id"
+            if partially_claimed
+            else f"identical transaction recorded {len(group)} times "
+            "under different payment ids"
+        )
+        records.extend(
+            {
+                SOURCE_FILE_COLUMN: source_file,
+                SOURCE_ROW_COLUMN: int(source_row),
+                DUPLICATE_TYPE_COLUMN: DUPLICATE_TRANSACTION,
+                DUPLICATE_KEY_COLUMN: key,
+                DUPLICATE_GROUP_SIZE_COLUMN: len(group),
+                IS_PRIMARY_COLUMN: is_primary,
+                "order_id": str(order_id),
+                "payment_id": str(payment_id),
+                DETAILS_COLUMN: details,
+            }
+            for (source_row, order_id, payment_id), is_primary in zip(
+                rows[[SOURCE_ROW_COLUMN, "order_id", "payment_id"]].itertuples(
+                    index=False
+                ),
+                flags,
             )
+        )
 
     return _frame(records, DUPLICATE_COLUMNS)
 

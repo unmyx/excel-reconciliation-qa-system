@@ -44,8 +44,6 @@ from recon.validation import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = Config()
-GENERATED_ORDERS_NAME = "orders_export.xlsx"
-GENERATED_PAYMENTS_NAME = "payments_export.xlsx"
 
 
 @dataclass(frozen=True, slots=True)
