@@ -290,7 +290,7 @@ def test_result_helpers_summarise_by_exception_type() -> None:
     }
     assert len(result.findings(ExceptionType.AMOUNT_MISMATCH)) == 1
     assert result.findings(ExceptionType.DUPLICATE_PAYMENT).empty
-    assert result.exception_count == 2
+    assert result.finding_count == 2
 
 
 def test_empty_exports_produce_empty_frames_with_expected_columns() -> None:

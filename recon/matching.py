@@ -181,8 +181,12 @@ class ReconciliationResult:
         return len(self.matched)
 
     @property
-    def exception_count(self) -> int:
-        """Findings in ``All Exceptions`` (one row per record and failed check)."""
+    def finding_count(self) -> int:
+        """Rows in ``All Exceptions``: one finding per record and failed check.
+
+        This counts findings, not records, so it is not the same number as
+        ``SummaryMetrics.exception_count`` (which counts distinct records).
+        """
 
         return len(self.exceptions)
 
