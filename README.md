@@ -22,9 +22,10 @@ rows that could not be used at all.
 
 Reconciling an orders export against a payments export is a routine finance-operations
 task that is usually done by hand: sort both files, look up each order, check the amount,
-check the currency, notice the order that was paid twice. This project automates that
-work end to end and produces a workbook a reviewer can act on, while keeping every
-discrepancy traceable back to the worksheet row it came from.
+check the currency, notice the order that was paid twice. The automation is a single
+headless command: it reads both exports, applies the rules below, and writes a workbook a
+reviewer can act on, while keeping every discrepancy traceable back to the worksheet row
+it came from.
 
 The emphasis is on the parts that are easy to get wrong in production: input data
 quality, transparent handling of unmatched records, cumulative exception reporting, and
@@ -32,7 +33,7 @@ numbers that can be explained.
 
 ## 2. Business Problem
 
-Two exports arrive from different systems and rarely agree:
+Two exports arrive from different systems on a recurring schedule and rarely agree:
 
 * an order is in the orders file but has no payment;
 * a payment references an order that does not exist;
@@ -256,9 +257,11 @@ python scripts/generate_sample_data.py --order-count 7500 --seed 42
 python run.py --generate-sample --seed 42     # same thing, then reconciles it
 ```
 
-The generator is fully deterministic for a given seed and writes
-`data/generation_manifest.json` alongside the exports, recording exactly which anomalies
-were injected and which records they touched. The default sample contains 7,500 orders
+The generator is deterministic for a given seed: the same seed produces the same records
+and the same manifest, which records exactly which anomalies were injected and which
+records they touched. **Identical inputs produce deterministic reconciliation results**;
+the `.xlsx` container itself is not byte-identical between runs, because workbook writers
+embed document metadata. The default sample contains 7,500 orders
 (plus 25 duplicated order rows) and 7,994 payment rows across 18 months, four currencies,
 five sales channels and four payment methods. Identifiers are obviously synthetic
 (`ORD-000001`, `PAY-0000001`).
@@ -301,13 +304,13 @@ The Summary reports run metadata (UTC timestamp, application version, input file
 amount tolerance, generation seed), the totals, matched count, affected-record count,
 quarantined rows, reconciliation rate and findings per exception type.
 
-Copied from the committed sample run. The Summary tab holds two columns, with section
-rows between the blocks:
+Copied from a run over the committed dataset (the timestamp and file paths reflect that
+run). The Summary tab holds two columns, with section rows between the blocks:
 
 ```
 Metric                                | Value
 Run                                   |
-Report generated (UTC)                | 2026-09-29 17:03:58
+Report generated (UTC)                | 2026-10-02 15:44:06
 Application version                   | 0.1.0
 Orders file                           | orders_export.xlsx
 Payments file                         | payments_export.xlsx
@@ -413,9 +416,11 @@ Python 3.11 and 3.13 for every push and pull request.
 ## 16. Limitations / Out of Scope
 
 * Synthetic data only; there is no connection to a real ERP, payment provider or database.
-* Excel input only (`.xlsx`, first worksheet of each file), no CSV or API ingestion.
-* No currency conversion. Amounts are only compared within the same currency; a different
-  payment currency is reported rather than converted at an FX rate.
+* Excel input only: the CLI reads the first worksheet of each `.xlsx` file. There is no
+  CSV, API or database ingestion.
+* No currency conversion. A payment in another currency is reported as a Currency
+  Mismatch, but its amount is still added to the order's paid total as-is, so the amount
+  check compares raw numbers rather than FX-converted ones.
 * No fuzzy matching of near-miss identifiers: `ORD-0001` and `ORD-00001` are different.
 * Duplicate detection flags the extra rows but cannot know which record is authoritative -
   that judgement stays with the reviewer.
@@ -430,7 +435,7 @@ Python 3.11 and 3.13 for every push and pull request.
 | Technology | Role |
 |---|---|
 | Python 3.11+ (developed on 3.14.7) | application language, `argparse` CLI, `logging` |
-| pandas 3.0.6 | loading, normalization, grouping, aggregation |
+| pandas 3.0.6 | loading, normalization, keyed matching, grouping and aggregation - relational operations (joins, group-bys, duplicate detection by count) expressed in pandas rather than SQL |
 | NumPy 2.5.3 | seeded random generation for the synthetic sample |
 | openpyxl 3.1.5 | reading exports and formatting the report workbook |
 | pytest 9.1.1 | test suite |
